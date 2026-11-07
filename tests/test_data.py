@@ -1,7 +1,8 @@
 import numpy as np
 import pandas as pd
+import pytest
 
-from src.data import garman_klass, split_by_date, target_30d
+from src.data import garman_klass, realized_forward, split_by_date, target_30d
 
 
 def _synthetic_ohlc(n=200, seed=0):
@@ -32,6 +33,25 @@ def test_target_30d_no_lookahead():
     cutoff = df.index[100]
     idx = y1.index[y1.index <= cutoff]
     pd.testing.assert_series_equal(y1.loc[idx], y2.loc[idx])
+
+
+def test_realized_forward_uses_only_future_days():
+    n = 100
+    dates = pd.bdate_range("2020-01-01", periods=n)
+    rng = np.random.default_rng(2)
+    daily_var = pd.Series(np.abs(rng.standard_normal(n)) * 1e-4 + 1e-6, index=dates)
+
+    t = dates[50]
+    horizon = 10
+
+    value = realized_forward(daily_var, t, horizon=horizon)
+    expected = daily_var.iloc[51:61].mean()
+    assert value == pytest.approx(expected)
+
+    daily_var_past_changed = daily_var.copy()
+    daily_var_past_changed.iloc[: 51] *= 1000.0  # change t and everything before
+    value_past_changed = realized_forward(daily_var_past_changed, t, horizon=horizon)
+    assert value_past_changed == pytest.approx(value)
 
 
 def test_split_by_date_chronological_and_non_overlapping():

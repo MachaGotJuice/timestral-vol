@@ -4,6 +4,6 @@ __pycache__/
 data/
 cache/
 checkpoints/
-results/*.npz
+results/
 .ipynb_checkpoints/
 .DS_Store

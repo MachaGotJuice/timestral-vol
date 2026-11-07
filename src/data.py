@@ -72,6 +72,37 @@ def target_30d(daily_var, window=30):
     return np.log(rolling_mean).dropna()
 
 
+def realized_forward(daily_var, t, horizon=30):
+    """Realized target at origin t: mean daily variance over t+1 .. t+horizon.
+
+    This is the quantity every model is trying to forecast when it makes
+    a prediction "at" origin t: the average realized variance over the
+    NEXT `horizon` trading days. It uses ONLY `daily_var` strictly after
+    t (never t itself, never anything before it) -- the no-lookahead
+    property every model's forecast at t must also respect.
+
+    Returns NaN if the window would run past the end of `daily_var`.
+    """
+    loc = daily_var.index.get_loc(t)
+    window = daily_var.iloc[loc + 1 : loc + 1 + horizon]
+    if len(window) < horizon:
+        return float("nan")
+    return float(window.mean())
+
+
+def forecast_origins(index, start_date, horizon, step=5):
+    """Forecast origins every `step` trading days within an evaluation period.
+
+    Returns the subset of `index` (a sorted DatetimeIndex of trading
+    days) such that each origin t satisfies t >= start_date and t +
+    horizon trading days is still inside `index` (so realized_forward(t)
+    is fully observed), spaced `step` trading days apart.
+    """
+    period_positions = np.flatnonzero(index >= pd.Timestamp(start_date))
+    valid_positions = period_positions[period_positions + horizon < len(index)]
+    return index[valid_positions[::step]]
+
+
 def split_by_date(series):
     """Chronological train/val/test split.
 
