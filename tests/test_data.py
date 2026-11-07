@@ -5,6 +5,25 @@ import pytest
 from src.data import garman_klass, realized_forward, split_by_date, target_30d
 
 
+def test_target_30d_aligns_with_realized_forward():
+    # y_{t+30} = log mean(GK[t+1 .. t+30]) = log(realized_forward(GK, t, 30))
+    # -- forecasting 30 steps ahead on the target_30d series is exactly
+    # forecasting the realized target at the origin.
+    n = 150
+    dates = pd.bdate_range("2020-01-01", periods=n)
+    rng = np.random.default_rng(3)
+    daily_var = pd.Series(np.abs(rng.standard_normal(n)) * 1e-4 + 1e-6, index=dates)
+
+    y = target_30d(daily_var, window=30)
+    horizon = 30
+
+    for t_pos in [40, 60, 80]:
+        t = dates[t_pos]
+        t_plus_h = dates[t_pos + horizon]
+        expected = np.log(realized_forward(daily_var, t, horizon=horizon))
+        assert y.loc[t_plus_h] == pytest.approx(expected)
+
+
 def _synthetic_ohlc(n=200, seed=0):
     rng = np.random.default_rng(seed)
     dates = pd.bdate_range("2020-01-01", periods=n)

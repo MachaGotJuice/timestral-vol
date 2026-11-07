@@ -63,6 +63,39 @@ def forecast_quantiles(model, contexts, horizon, symmetric_averaging=True):
     return quantiles, quantile_levels
 
 
+def nearest_quantile(values, levels, level):
+    """Value at the sampled quantile level closest to `level`.
+
+    `values` has shape (..., Q) and `levels` shape (Q,) (e.g.
+    forecast.quantile_levels). Used for e.g. the median (level=0.5) or a
+    10/90% band edge, without ever assuming the levels are evenly spaced.
+    """
+    idx = int(np.argmin(np.abs(np.asarray(levels) - level)))
+    return values[..., idx]
+
+
+def quantile_mean(values, levels):
+    """E[X] from samples of X's quantile function, trapezoidal + flat tails.
+
+    `values[..., i]` is the quantile of X at probability `levels[i]`
+    (levels ascending, e.g. forecast.quantile_levels). The mean is
+    E[X] = integral_0^1 Q(p) dp, approximated as:
+      - the trapezoidal rule over the sampled region [levels[0], levels[-1]]
+      - plus flat-tail terms levels[0] * values[..., 0] and
+        (1 - levels[-1]) * values[..., -1] for the unsampled tails,
+        assuming Q(p) is roughly constant beyond the sampled extremes.
+
+    This is an approximation (exact only where that flat-tail assumption
+    holds), not a substitute for the model's true expectation.
+    """
+    levels = np.asarray(levels)
+    trapezoid = getattr(np, "trapezoid", None) or np.trapz  # numpy >=2.0 renamed trapz
+    inner = trapezoid(values, levels, axis=-1)
+    lower_tail = levels[0] * values[..., 0]
+    upper_tail = (1 - levels[-1]) * values[..., -1]
+    return lower_tail + inner + upper_tail
+
+
 def differentiable_quantiles(model, contexts, horizon):
     """STUB -- not yet implemented. Needed for fine-tuning only.
 
