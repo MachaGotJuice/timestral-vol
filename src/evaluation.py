@@ -38,6 +38,9 @@ def qlike_losses(df):
 
 def qlike_tables(df, models):
     """(pooled, per_ticker, per_year) QLIKE, one column per model, in `models` order."""
+    missing = sorted(set(models) - set(df["model"]))
+    assert not missing, (f"models {missing} are not in the forecasts files -- rerun the notebook that "
+                         "produces them (ts5m_*_nosym comes from notebook 02)")
     sub = df[df["model"].isin(models)].assign(loss=lambda d: qlike_losses(d), year=lambda d: d["origin_date"].dt.year)
     pooled = sub.groupby("model")["loss"].mean().reindex(models).rename("qlike")
     per_ticker = sub.pivot_table(index="ticker", columns="model", values="loss", aggfunc="mean")
