@@ -96,16 +96,52 @@ def quantile_mean(values, levels):
     return lower_tail + inner + upper_tail
 
 
-def differentiable_quantiles(model, contexts, horizon):
-    """STUB -- not yet implemented. Needed for fine-tuning only.
+def differentiable_quantiles(forecaster, contexts, horizon):
+    """Quantile forecasts that keep the autograd graph, for fine-tuning.
 
-    `model.forecast()` is decorated with @torch.inference_mode(), so it
-    gives no gradients. For fine-tuning, call the internal
-    `model._forecast_raw(inputs, mask, prediction_length)` under
-    `torch.enable_grad()` instead. This is a private API: keep the
-    pinned commit in requirements.txt, and add a test asserting this
-    path is numerically equivalent to
-    `model.forecast(..., symmetric_averaging=False)` before relying on
-    it for fine-tuning.
+    `forecaster.forecast()` is wrapped in @torch.inference_mode(), so it
+    gives no gradients. This calls the private
+    `forecaster._forecast_raw(inputs, mask, horizon)` under
+    `torch.enable_grad()` instead -- the same single pass `forecast()`
+    makes, without symmetric averaging and without non-negative clipping
+    (tests/test_differentiable.py checks the two agree). It is a private
+    API: keep the timestral commit pinned in requirements.txt.
+
+    `_forecast_raw` calls `model.eval()`, so dropout (if any) is off even
+    while training; that is fine for full fine-tuning here.
+
+    Parameters
+    ----------
+    forecaster : TimestralForecaster
+    contexts : torch.Tensor, shape (B, T)
+        Float context series on the forecaster's device. NaN/inf mark
+        missing values, exactly as in `forecast()`.
+    horizon : int
+
+    Returns
+    -------
+    torch.Tensor, shape (B, 1, H, Q)
+        Quantiles in data units, differentiable w.r.t. forecaster.model.
     """
-    raise NotImplementedError
+    import torch
+
+    inputs = contexts.to(device=forecaster.device, dtype=torch.float32)[:, None, :]
+    mask = torch.isfinite(inputs)
+    inputs = torch.where(mask, inputs, torch.zeros_like(inputs))  # as forecast() does
+    with torch.enable_grad():
+        return forecaster._forecast_raw(inputs, mask, horizon)
+
+
+def load_finetuned(checkpoint_path, size="5M", device=None):
+    """Timestral forecaster with weights from a fine-tuning checkpoint.
+
+    The checkpoint is a dict saved by `src.finetune.train` with the
+    model's state_dict under "model".
+    """
+    import torch
+
+    forecaster = load_model(size, device=device)
+    state = torch.load(checkpoint_path, map_location=forecaster.device)
+    forecaster.model.load_state_dict(state["model"])
+    forecaster.model.eval()
+    return forecaster
